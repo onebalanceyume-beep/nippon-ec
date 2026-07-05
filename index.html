@@ -32,10 +32,9 @@
     -webkit-user-select:none;
     user-select:none;
   }
-  header{
     background:var(--red);
     color:#fff;
-    padding:14px 16px 12px;
+    padding:calc(14px + env(safe-area-inset-top)) 16px 12px;
     text-align:center;
     position:sticky;
     top:0;
