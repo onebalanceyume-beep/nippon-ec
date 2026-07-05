@@ -113,25 +113,35 @@
     gap:8px;
     margin-bottom:10px;
   }
-  select, button.toggle-btn{
+  select, input[type=number], input[type=text]{
     flex:1;
     padding:12px 10px;
     font-size:15px;
     border-radius:10px;
     border:1px solid #ccc;
     background:#fff;
+    -webkit-user-select:text;
+    user-select:text;
   }
-  button.toggle-btn{
+  button.add-btn{
     flex:none;
     background:var(--red);
     color:#fff;
     border:none;
     font-weight:bold;
-    padding:12px 16px;
+    padding:12px 18px;
+    border-radius:10px;
     white-space:nowrap;
   }
-  button.toggle-btn.done{
+  button.minus-btn{
+    flex:none;
     background:#888;
+    color:#fff;
+    border:none;
+    font-weight:bold;
+    padding:12px 14px;
+    border-radius:10px;
+    white-space:nowrap;
   }
   .status-line{
     text-align:center;
@@ -158,29 +168,68 @@
   }
   .dot.red{background:var(--red);}
   .dot.gray{background:var(--gray); border:1px solid #ccc;}
-  .chips-title{
-    font-size:13px;
+  .section-title{
+    font-size:14px;
     font-weight:bold;
-    margin:0 0 8px;
+    margin:0 0 10px;
     color:var(--dark);
-  }
-  .chips{
     display:flex;
-    flex-wrap:wrap;
+    align-items:center;
     gap:6px;
-    margin-bottom:24px;
   }
-  .chip{
-    background:var(--red);
-    color:#fff;
-    font-size:12px;
-    padding:5px 10px;
-    border-radius:20px;
+  .card{
+    background:#fff;
+    border:1px solid #eee;
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:20px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.05);
   }
-  .chip.empty{
+  .rank-list{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .rank-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#fafafa;
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:13px;
+  }
+  .rank-row .name{
+    font-weight:bold;
+  }
+  .rank-row .num{
+    color:var(--red);
+    font-weight:bold;
+    font-size:14px;
+  }
+  .rank-row.overseas .num{
+    color:var(--blue);
+  }
+  .empty-note{
     color:#999;
-    background:none;
-    border:1px dashed #ccc;
+    font-size:12px;
+    text-align:center;
+    padding:8px 0;
+  }
+  .overseas-list-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#fafafa;
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:13px;
+    margin-bottom:6px;
+  }
+  .del-x{
+    color:#bbb;
+    font-size:16px;
+    padding:2px 8px;
   }
   .reset-wrap{
     text-align:center;
@@ -200,7 +249,7 @@
 
 <header>
   <h1>🥊 ワンバランス 全国制覇マップ</h1>
-  <div class="sub">グッズ進出済みエリアを記録しよう</div>
+  <div class="sub">グッズ販売エリアと件数を記録しよう</div>
 </header>
 
 <div class="progress-wrap">
@@ -212,8 +261,8 @@
 </div>
 
 <div class="legend">
-  <span><i class="dot red"></i>進出済み</span>
-  <span><i class="dot gray"></i>未進出</span>
+  <span><i class="dot red"></i>販売実績あり</span>
+  <span><i class="dot gray"></i>未販売</span>
 </div>
 
 <div class="map-wrap">
@@ -445,12 +494,28 @@
 <div class="controls">
   <div class="search-box">
     <select id="pref-select"></select>
-    <button class="toggle-btn" id="toggle-btn">切替</button>
+    <input type="number" id="pref-count-input" min="1" value="1" style="flex:0 0 70px">
+    <button class="add-btn" id="add-btn">追加</button>
   </div>
-  <div class="status-line" id="status-line">県をタップ、または上のリストから選んで切替できます</div>
+  <div class="search-box">
+    <button class="minus-btn" id="minus-btn" style="flex:1">選択中の県を1件減らす</button>
+  </div>
+  <div class="status-line" id="status-line">県を選んで「追加」をタップすると件数が記録されます</div>
 
-  <div class="chips-title">進出済みエリア一覧</div>
-  <div class="chips" id="chips"></div>
+  <div class="card">
+    <div class="section-title">📊 都道府県別 件数一覧</div>
+    <div class="rank-list" id="pref-rank-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">🌏 海外からの注文</div>
+    <div class="search-box">
+      <input type="text" id="country-input" placeholder="国名を入力（例：アメリカ）">
+      <input type="number" id="country-count-input" min="1" value="1" style="flex:0 0 70px">
+      <button class="add-btn" id="country-add-btn">追加</button>
+    </div>
+    <div id="overseas-list"></div>
+  </div>
 
   <div class="reset-wrap">
     <button class="reset-btn" id="reset-btn">全てリセット</button>
@@ -475,25 +540,32 @@ const PREF_DATA = [
 const CODE_TO_NAME = {};
 PREF_DATA.forEach(p=>CODE_TO_NAME[p[0]]=p[2]);
 
-const STORAGE_KEY = 'onebalance-map-achieved';
-let achieved = new Set();
+const STORAGE_KEY = 'onebalance-map-data-v2';
 
-async function loadState(){
+let state = {
+  pref: {},       // { "13": 5, "27": 2, ... }  件数
+  overseas: []     // [{country:"アメリカ", count:3}, ...]
+};
+
+function loadState(){
   try{
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if(res && res.value){
-      const arr = JSON.parse(res.value);
-      achieved = new Set(arr);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && typeof parsed === 'object'){
+        state.pref = parsed.pref || {};
+        state.overseas = Array.isArray(parsed.overseas) ? parsed.overseas : [];
+      }
     }
   }catch(e){
-    achieved = new Set();
+    console.error('読み込み失敗', e);
   }
   render();
 }
 
-async function saveState(){
+function saveState(){
   try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify(Array.from(achieved)), false);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }catch(e){
     console.error('保存に失敗しました', e);
   }
@@ -502,66 +574,63 @@ async function saveState(){
 function paintMap(){
   document.querySelectorAll('.geolonia-svg-map .prefecture').forEach(g=>{
     const code = g.getAttribute('data-code');
-    if(achieved.has(code)){
-      g.style.fill = '#DB444C';
-    }else{
-      g.style.fill = '#EAEAEA';
-    }
+    const cnt = state.pref[code] || 0;
+    g.style.fill = cnt > 0 ? '#DB444C' : '#EAEAEA';
   });
 }
 
-function renderChips(){
-  const chipsEl = document.getElementById('chips');
-  chipsEl.innerHTML = '';
-  if(achieved.size === 0){
-    const d = document.createElement('div');
-    d.className = 'chip empty';
-    d.textContent = 'まだありません';
-    chipsEl.appendChild(d);
+function renderPrefRank(){
+  const listEl = document.getElementById('pref-rank-list');
+  const entries = Object.entries(state.pref).filter(([c,n])=>n>0);
+  if(entries.length === 0){
+    listEl.innerHTML = '<div class="empty-note">まだ記録がありません</div>';
     return;
   }
-  Array.from(achieved).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(code=>{
-    const d = document.createElement('div');
-    d.className = 'chip';
-    d.textContent = CODE_TO_NAME[code];
-    chipsEl.appendChild(d);
-  });
+  entries.sort((a,b)=>b[1]-a[1]);
+  listEl.innerHTML = entries.map(([code,cnt])=>{
+    const name = CODE_TO_NAME[code] || code;
+    return `<div class="rank-row"><span class="name">${name}</span><span class="num">${cnt}件</span></div>`;
+  }).join('');
+}
+
+function renderOverseas(){
+  const listEl = document.getElementById('overseas-list');
+  if(state.overseas.length === 0){
+    listEl.innerHTML = '<div class="empty-note">まだ記録がありません</div>';
+    return;
+  }
+  listEl.innerHTML = state.overseas.map((item, idx)=>{
+    return `<div class="overseas-list-item"><span><b>${escapeHtml(item.country)}</b>：<span style="color:var(--blue);font-weight:bold">${item.count}件</span></span><span class="del-x" onclick="deleteOverseas(${idx})">✕</span></div>`;
+  }).join('');
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function renderProgress(){
-  const n = achieved.size;
-  document.getElementById('count-num').textContent = n;
-  document.getElementById('bar-fill').style.width = (n/47*100)+'%';
-}
-
-function renderSelectButton(){
-  const sel = document.getElementById('pref-select');
-  const code = sel.value;
-  const btn = document.getElementById('toggle-btn');
-  if(achieved.has(code)){
-    btn.textContent = '未進出に戻す';
-    btn.classList.add('done');
-  }else{
-    btn.textContent = '進出済みにする';
-    btn.classList.remove('done');
-  }
-}
-
-function toggle(code){
-  if(achieved.has(code)){
-    achieved.delete(code);
-  }else{
-    achieved.add(code);
-  }
-  saveState();
-  render();
+  const achievedCount = Object.values(state.pref).filter(n=>n>0).length;
+  document.getElementById('count-num').textContent = achievedCount;
+  document.getElementById('bar-fill').style.width = (achievedCount/47*100)+'%';
 }
 
 function render(){
   paintMap();
-  renderChips();
+  renderPrefRank();
+  renderOverseas();
   renderProgress();
-  renderSelectButton();
+}
+
+function addPrefCount(code, delta){
+  const cur = state.pref[code] || 0;
+  const next = Math.max(0, cur + delta);
+  if(next === 0){
+    delete state.pref[code];
+  }else{
+    state.pref[code] = next;
+  }
+  saveState();
+  render();
 }
 
 function initSelect(){
@@ -572,32 +641,61 @@ function initSelect(){
     opt.textContent = p[2];
     sel.appendChild(opt);
   });
-  sel.addEventListener('change', renderSelectButton);
 }
 
 function initMapClicks(){
   document.querySelectorAll('.geolonia-svg-map .prefecture').forEach(g=>{
     g.addEventListener('click', ()=>{
       const code = g.getAttribute('data-code');
-      toggle(code);
       document.getElementById('pref-select').value = code;
       const name = CODE_TO_NAME[code];
-      document.getElementById('status-line').textContent = name + ' を' + (achieved.has(code)?'進出済みにしました':'未進出に戻しました');
+      document.getElementById('status-line').textContent = name + ' を選択しました。件数を入力して「追加」を押してください';
     });
   });
 }
 
-document.getElementById('toggle-btn').addEventListener('click', ()=>{
-  const sel = document.getElementById('pref-select');
-  const code = sel.value;
-  toggle(code);
+document.getElementById('add-btn').addEventListener('click', ()=>{
+  const code = document.getElementById('pref-select').value;
+  const n = parseInt(document.getElementById('pref-count-input').value, 10) || 1;
+  addPrefCount(code, n);
   const name = CODE_TO_NAME[code];
-  document.getElementById('status-line').textContent = name + ' を' + (achieved.has(code)?'進出済みにしました':'未進出に戻しました');
+  document.getElementById('status-line').textContent = `${name} に ${n}件 追加しました（合計 ${state.pref[code]||0}件）`;
 });
+
+document.getElementById('minus-btn').addEventListener('click', ()=>{
+  const code = document.getElementById('pref-select').value;
+  addPrefCount(code, -1);
+  const name = CODE_TO_NAME[code];
+  document.getElementById('status-line').textContent = `${name} を1件減らしました（合計 ${state.pref[code]||0}件）`;
+});
+
+document.getElementById('country-add-btn').addEventListener('click', ()=>{
+  const nameInput = document.getElementById('country-input');
+  const countInput = document.getElementById('country-count-input');
+  const name = nameInput.value.trim();
+  const cnt = parseInt(countInput.value, 10) || 1;
+  if(!name) return;
+  const existing = state.overseas.find(o=>o.country === name);
+  if(existing){
+    existing.count += cnt;
+  }else{
+    state.overseas.push({country:name, count:cnt});
+  }
+  nameInput.value = '';
+  saveState();
+  render();
+});
+
+function deleteOverseas(idx){
+  if(!confirm(state.overseas[idx].country + ' の記録を削除しますか？')) return;
+  state.overseas.splice(idx,1);
+  saveState();
+  render();
+}
 
 document.getElementById('reset-btn').addEventListener('click', ()=>{
   if(confirm('全ての記録をリセットします。よろしいですか？')){
-    achieved = new Set();
+    state = { pref:{}, overseas:[] };
     saveState();
     render();
     document.getElementById('status-line').textContent = 'リセットしました';
